@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Collaborative Canvas</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div id="controls">
+        <input type="color" id="colorPicker" value="#000000">
+        <input type="range" id="widthSlider" min="1" max="50" value="5">
+        <button id="undoBtn">Undo</button>
+        <div id="userList"></div>
+    </div>
+    <div id="canvasContainer">
+        <canvas id="drawingCanvas"></canvas>
+        <canvas id="cursorCanvas"></canvas>
+    </div>
+    <script src="main.js"></script>
+    <div id="controls">
+    <input type="color" id="colorPicker" value="#FF0000"> <input type="range" id="widthSlider" min="1" max="50" value="5">
+    <button id="undoBtn">Undo</button>
+    <div id="userList"></div>
+</div>
+<div id="canvasContainer">
+    <canvas id="drawingCanvas"></canvas>
+    <canvas id="cursorCanvas"></canvas>
+</div>
+<script src="canvas.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
+</body>
+</html>

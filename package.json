@@ -1,0 +1,33 @@
+{
+  "name": "collaborative-canvas",
+  "version": "1.0.0",
+  "description": "Server for a collaborative drawing canvas using Express and Socket.IO.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nimayn/collaborative-canvas.git"
+  },
+  "keywords": [
+    "socket.io",
+    "express",
+    "canvas",
+    "collaborative"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Nimayn/collaborative-canvas/issues"
+  },
+  "homepage": "https://github.com/Nimayn/collaborative-canvas#readme",
+  "dependencies": {
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  }
+}
+
+
