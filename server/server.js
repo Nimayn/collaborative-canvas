@@ -13,47 +13,68 @@ const stateManager = new GlobalDrawingState();
 // Serve the client files
 app.use(express.static(path.join(__dirname, '../client')));
 
-// Handle Socket.io connections
+// Store temporary connection data (like user color)
+const onlineUsers = {};
+
 io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
     const userId = socket.id;
+    console.log(`User connected: ${userId}`);
 
     // 1. Initial State: Send the current canvas state to the new user.
     socket.emit('state:init', stateManager.getCanvasState());
+    
+    // Announce new user and assign a temporary color
+    onlineUsers[userId] = { id: userId, color: '#' + Math.floor(Math.random()*16777215).toString(16) };
+    io.emit('user:update', onlineUsers);
 
-    // 2. Real-time Drawing (path:start, path:continue, path:end)
+
+    // 2. Drawing Path Start (Server-side commitment)
     socket.on('path:start', (op) => {
-        // Add operation metadata (server is authoritative on ID and user)
+        // 1. Create the authoritative operation object
         const fullOp = stateManager.createOperation(userId, 'draw', op);
         stateManager.addOperation(fullOp);
         
-        // Broadcast the new operation to all clients (including sender for reconciliation)
-        io.emit('state:operation', fullOp);
+        // 2. Broadcast the starting operation (used for client reconciliation)
+        // NOTE: We don't broadcast the full stroke here; we wait for path:end.
     });
 
-    // Handle path:continue (no need to store in history, just broadcast)
+    // 3. Drawing Path Continue (Real-time broadcasting, NOT stored in history)
     socket.on('path:continue', (data) => {
-        // Broadcast point data to everyone else for smooth drawing
+        // data contains: { id (temp client ID), x, y, userId }
+        // Broadcast the point data to everyone else for immediate, smooth rendering
         socket.broadcast.emit('path:continue', data); 
     });
 
-    // 3. Global Undo
+    // 4. Drawing Path End (Stroke finalized and broadcasted)
+    socket.on('path:end', ({ id, points }) => {
+        // 1. Update the authoritative operation in history with final points
+        const committedOp = stateManager.updateOperationPoints(id, points);
+        
+        if (committedOp) {
+            // 2. Broadcast the COMPLETED stroke to all clients
+            io.emit('state:operation', committedOp);
+        }
+    });
+
+
+    // 5. Global Undo
     socket.on('undo:request', () => {
         const undoneOpId = stateManager.undoLastOperation();
         if (undoneOpId) {
-            // Tell everyone a specific operation was removed from history
+            // Tell everyone to redraw based on the history without this operation
             io.emit('state:undo', { undoneOperationId: undoneOpId });
         }
     });
 
-    // 4. User Indicators (Cursor)
+    // 6. User Indicators (Cursor)
     socket.on('cursor:move', (pos) => {
-        socket.broadcast.emit('cursor:update', { userId, ...pos });
+        socket.broadcast.emit('cursor:update', { userId, ...pos, color: onlineUsers[userId].color });
     });
 
     socket.on('disconnect', () => {
         console.log(`User disconnected: ${userId}`);
-        // Cleanup user state/cursor
+        delete onlineUsers[userId];
+        io.emit('user:update', onlineUsers); // Update user list for clients
     });
 });
 

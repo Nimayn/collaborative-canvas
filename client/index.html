@@ -8,28 +8,34 @@
 </head>
 <body>
     <div id="controls">
-        <input type="color" id="colorPicker" value="#000000">
-        <input type="range" id="widthSlider" min="1" max="50" value="5">
-        <button id="undoBtn">Undo</button>
-        <div id="userList"></div>
+        
+        <div class="control-group" id="tool-select">
+            <button id="brushBtn" class="tool-btn active" data-tool="brush" title="Brush Tool">🎨 Brush</button>
+            <button id="eraserBtn" class="tool-btn" data-tool="eraser" title="Eraser Tool">🧼 Eraser</button>
+        </div>
+
+        <div class="control-group">
+            <label for="colorPicker" title="Stroke Color">Color: <input type="color" id="colorPicker" value="#000000"></label>
+            <label for="widthSlider" title="Stroke Width">Width: <input type="range" id="widthSlider" min="1" max="50" value="5"></label>
+        </div>
+
+        <div class="control-group">
+            <button id="undoBtn" title="Undo Last Global Action (Ctrl+Z)">Undo</button>
+        </div>
+
+        <div class="control-group" id="status-group">
+            <div id="userList" title="Online Users">Online:</div>
+        </div>
+
     </div>
+    
     <div id="canvasContainer">
         <canvas id="drawingCanvas"></canvas>
         <canvas id="cursorCanvas"></canvas>
     </div>
+    
+    <script src="canvas.js"></script>
+    <script src="cursor-manager.js"></script>
     <script src="main.js"></script>
-    <div id="controls">
-    <input type="color" id="colorPicker" value="#FF0000"> <input type="range" id="widthSlider" min="1" max="50" value="5">
-    <button id="undoBtn">Undo</button>
-    <div id="userList"></div>
-</div>
-<div id="canvasContainer">
-    <canvas id="drawingCanvas"></canvas>
-    <canvas id="cursorCanvas"></canvas>
-</div>
-<script src="canvas.js"></script>
-    <script src="main.js"></script>
-</body>
-</html>
 </body>
 </html>
