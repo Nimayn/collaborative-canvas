@@ -1,4 +1,4 @@
-// client/main.js
+// client/main.js - Updated and Fixed for Tool State Management
 
 // --- Utility: Throttle Function (Crucial for network performance) ---
 const throttle = (func, limit) => {
@@ -14,25 +14,25 @@ const throttle = (func, limit) => {
     }
 };
 const THROTTLE_LIMIT = 50; 
-
+const CANVAS_BACKGROUND = '#f8f8f8'; // Must match CSS background and eraser color
 
 document.addEventListener('DOMContentLoaded', () => {
     const socket = io();
+    
     // Initialize Managers (assuming CanvasManager and CursorManager are loaded)
     const canvasManager = new CanvasManager('drawingCanvas');
     const cursorManager = new CursorManager('cursorCanvas');
     
-    // Set socket ID globally for local/remote distinction
     window.socketId = socket.id;
 
     // --- State Variables ---
-    let currentTool = 'brush'; // New state: 'brush' or 'eraser'
-    let brushColor = document.getElementById('colorPicker').value;
+    let currentTool = 'brush'; 
+    let activeBrushColor = document.getElementById('colorPicker').value; // Color for brush only
     let brushWidth = parseInt(document.getElementById('widthSlider').value);
     
     let currentPoints = [];
     let currentPathId = null; 
-    let currentPathStyle = {}; 
+    let currentPathStyle = {}; // Stores color/width/tool for network transfer
 
     // Elements
     const controlsEl = document.getElementById('controls');
@@ -44,19 +44,14 @@ document.addEventListener('DOMContentLoaded', () => {
     let isDragging = false;
     let offsetX, offsetY; 
     
-    // --- UI Listeners and Logic ---
+    // --- UI Listeners and Tool Logic ---
 
-    // Function to update the brushColor state based on the selected tool
-    const updateBrushStyle = () => {
-        if (currentTool === 'eraser') {
-            // NOTE: Must match the background color defined in client/style.css
-            brushColor = '#f8f8f8'; 
-        } else {
-            brushColor = colorPickerEl.value;
-        }
+    // Function to get the correct stroke color based on the current tool
+    const getStrokeColor = () => {
+        return (currentTool === 'eraser') ? CANVAS_BACKGROUND : activeBrushColor;
     };
     
-    // Tool Selection
+    // Tool Selection Logic
     const toolBtns = document.querySelectorAll('.tool-btn');
     toolBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -67,18 +62,14 @@ document.addEventListener('DOMContentLoaded', () => {
             toolBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             
-            // Update color logic
-            updateBrushStyle();
-            
-            // You might visually disable the color picker for the eraser:
+            // Disable color picker for eraser
             colorPickerEl.disabled = (currentTool === 'eraser');
         });
     });
 
     colorPickerEl.addEventListener('input', (e) => {
-        if (currentTool === 'brush') {
-            brushColor = e.target.value;
-        }
+        activeBrushColor = e.target.value;
+        // If the tool is brush, update immediately, if not, wait for switch.
     });
     widthSliderEl.addEventListener('input', (e) => brushWidth = parseInt(e.target.value));
     
@@ -118,8 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ##########################################
 
     controlsEl.addEventListener('pointerdown', (e) => {
-        // Prevent dragging if the user clicked on an interactive element
-        if (e.target.closest('input, button')) return; 
+        if (e.target.closest('input, button, label')) return; 
 
         isDragging = true;
         controlsEl.setPointerCapture(e.pointerId);
@@ -136,7 +126,6 @@ document.addEventListener('DOMContentLoaded', () => {
         let newLeft = e.clientX - offsetX;
         let newTop = e.clientY - offsetY;
 
-        // Clamp values to keep the panel within the viewport
         newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - controlsEl.offsetWidth));
         newTop = Math.max(0, Math.min(newTop, window.innerHeight - controlsEl.offsetHeight));
         
@@ -147,9 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('pointerup', (e) => {
         if (isDragging) {
             isDragging = false;
-            try {
-                controlsEl.releasePointerCapture(e.pointerId);
-            } catch (err) {}
+            try { controlsEl.releasePointerCapture(e.pointerId); } catch (err) {}
         }
     });
 
@@ -161,17 +148,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Drawing Event Handlers (Pointer Events) ---
     
     canvasEl.addEventListener('pointerdown', (e) => {
+        // Do not draw if dragging controls
+        if (e.target === controlsEl || e.target.closest('#controls')) return; 
         if (e.button !== 0 && e.pointerType === 'mouse') return; 
 
         canvasEl.setPointerCapture(e.pointerId);
         const { x, y } = getCanvasCoordinates(e, canvasEl);
 
         currentPathId = `client-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-        // Style must reflect the active tool (brushColor handles eraser logic)
-        currentPathStyle = { tool: currentTool, color: brushColor, width: brushWidth };
+        
+        // Define the style object that will be sent to the server (crucial for eraser!)
+        currentPathStyle = { 
+            tool: currentTool, 
+            color: getStrokeColor(), // Uses CANVAS_BACKGROUND if eraser is active
+            width: brushWidth 
+        };
         
         // 1. Client-Side Prediction (Draw locally)
-        canvasManager.startLocalPath(x, y, brushColor, brushWidth);
+        canvasManager.startLocalPath(x, y, currentPathStyle.color, currentPathStyle.width, currentPathStyle.tool);
         currentPoints = [{ x, y }];
 
         // 2. Send Start Operation to Server 
@@ -217,11 +211,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- WebSocket Event Handlers ---
     
+    // Initial State
     socket.on('state:init', (history) => {
         canvasManager.pathHistory = history;
         canvasManager.redrawFullState();
     });
 
+    // Authoritative Stroke from Server
     socket.on('state:operation', (newOp) => {
         canvasManager.pathHistory.push(newOp);
         
@@ -230,22 +226,20 @@ document.addEventListener('DOMContentLoaded', () => {
         } 
     });
 
-    socket.on('path:continue', (data) => {
-        // NOTE: If you implement remote path continuation in CanvasManager, call it here.
-        // It's currently disabled as the server sends the full path on path:end.
-        // canvasManager.continueRemotePath(data.x, data.y, data.color, data.width);
-    });
-
+    // Global Undo Command
     socket.on('state:undo', ({ undoneOperationId }) => {
         const op = canvasManager.pathHistory.find(o => o.id === undoneOperationId);
         if (op) op.isActive = false;
+        // CRITICAL for consistency: redraw the entire consistent state
         canvasManager.redrawFullState();
     });
     
+    // Cursor updates from remote users
     socket.on('cursor:update', (pos) => {
         cursorManager.updateCursor(pos.userId, pos.x, pos.y, pos.color);
     });
     
+    // User list update
     socket.on('user:update', (users) => {
         const userListEl = document.getElementById('userList');
         userListEl.innerHTML = 'Online: ';

@@ -1,4 +1,5 @@
-// server/server.js
+// server/server.js - Updated and Fixed for Tool State and State Commitment
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -13,45 +14,56 @@ const stateManager = new GlobalDrawingState();
 // Serve the client files
 app.use(express.static(path.join(__dirname, '../client')));
 
-// Store temporary connection data (like user color)
+// Store temporary connection data (like user color and ID)
 const onlineUsers = {};
 
 io.on('connection', (socket) => {
     const userId = socket.id;
     console.log(`User connected: ${userId}`);
 
-    // 1. Initial State: Send the current canvas state to the new user.
+    // 1. Initial Handshake and User Status
+    
+    // Send the current canvas state to the new user.
     socket.emit('state:init', stateManager.getCanvasState());
     
     // Announce new user and assign a temporary color
-    onlineUsers[userId] = { id: userId, color: '#' + Math.floor(Math.random()*16777215).toString(16) };
-    io.emit('user:update', onlineUsers);
+    const userColor = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+    onlineUsers[userId] = { id: userId, color: userColor };
+    io.emit('user:update', onlineUsers); // Broadcast updated user list
 
 
-    // 2. Drawing Path Start (Server-side commitment)
+    // 2. Drawing Path Start (Server-side commitment of stroke intent)
     socket.on('path:start', (op) => {
-        // 1. Create the authoritative operation object
-        const fullOp = stateManager.createOperation(userId, 'draw', op);
+        // op includes: id (temp client ID), tool, color, width, points (first point)
+        
+        // CRITICAL: Create the authoritative operation object. The server MUST store this
+        // immediately to maintain chronological order, even if points are incomplete.
+        const fullOp = stateManager.createOperation(userId, op.tool, op);
         stateManager.addOperation(fullOp);
         
-        // 2. Broadcast the starting operation (used for client reconciliation)
-        // NOTE: We don't broadcast the full stroke here; we wait for path:end.
+        // NOTE: We DO NOT broadcast the stroke yet. We wait for path:end 
+        // to get the full, complete set of points before adding it to the authoritative view.
     });
 
-    // 3. Drawing Path Continue (Real-time broadcasting, NOT stored in history)
+    // 3. Drawing Path Continue (Real-time broadcasting for low latency visualization)
     socket.on('path:continue', (data) => {
-        // data contains: { id (temp client ID), x, y, userId }
+        // data includes: id (temp client ID), x, y, tool, color, width
+        
         // Broadcast the point data to everyone else for immediate, smooth rendering
+        // NOTE: This relies on the client side handling the visual interpolation.
         socket.broadcast.emit('path:continue', data); 
     });
 
     // 4. Drawing Path End (Stroke finalized and broadcasted)
     socket.on('path:end', ({ id, points }) => {
+        // id is the temporary client ID used in path:start
+        
         // 1. Update the authoritative operation in history with final points
+        // This is the moment the stroke becomes permanent and complete.
         const committedOp = stateManager.updateOperationPoints(id, points);
         
         if (committedOp) {
-            // 2. Broadcast the COMPLETED stroke to all clients
+            // 2. CRITICAL: Broadcast the COMPLETED stroke to all clients
             io.emit('state:operation', committedOp);
         }
     });
@@ -74,7 +86,7 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log(`User disconnected: ${userId}`);
         delete onlineUsers[userId];
-        io.emit('user:update', onlineUsers); // Update user list for clients
+        io.emit('user:update', onlineUsers); // Broadcast updated user list
     });
 });
 

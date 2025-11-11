@@ -1,15 +1,16 @@
-// client/canvas.js
+// client/canvas.js - Updated and Fixed for State Consistency
 
 class CanvasManager {
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext('2d');
         
-        // Dynamic sizing
+        // Set initial size and handle resizing
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
         window.addEventListener('resize', this.handleResize);
 
+        // Core context settings (applies to all drawing by default)
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
         
@@ -20,33 +21,47 @@ class CanvasManager {
     handleResize = () => {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
-        this.redrawFullState(); // Redraw everything after resize
+        // CRITICAL: Redraw full state after resize to restore content
+        this.redrawFullState(); 
     }
 
     clearCanvas() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
-   
+    // --- Core Rendering Functions (for history/authority) ---
 
     // The critical function for state initialization and undo/redo
     redrawFullState() {
-        this.clearCanvas();
-        // Re-draw every operation in the current, active history
+        // 1. MUST CLEAR THE ENTIRE CANVAS FIRST TO PREVENT GHOST STROKES
+        this.clearCanvas(); 
+
+        // 2. Re-draw every operation in the current, active history
         this.pathHistory.forEach(op => {
-            if (op.isActive) {
+            if (op.isActive) { 
                 this.drawOperation(op);
             }
         });
     }
 
-    // Draws one single complete stroke from the authoritative history
+    // Draws one single complete stroke from the authoritative history (used by redrawFullState)
     drawOperation(op) {
-        const { points, color, width } = op;
+        const { points, color, width, tool } = op;
         if (!points || points.length < 2) return;
 
         this.ctx.beginPath();
-        this.ctx.strokeStyle = color;
+        
+        // Apply tool-specific styles
+        if (tool === 'eraser') {
+            // Eraser uses the background color and a 'destination-out' composite operation
+            this.ctx.strokeStyle = '#f8f8f8'; // Must match CSS background
+            this.ctx.globalCompositeOperation = 'destination-out';
+        } else {
+            // Brush uses the stored color and a 'source-over' composite operation
+            this.ctx.strokeStyle = color;
+            this.ctx.globalCompositeOperation = 'source-over';
+        }
+        
         this.ctx.lineWidth = width;
         
         this.ctx.moveTo(points[0].x, points[0].y);
@@ -57,15 +72,27 @@ class CanvasManager {
 
         this.ctx.stroke();
         this.ctx.closePath();
+        
+        // IMPORTANT: Reset composite operation to default after drawing one stroke
+        this.ctx.globalCompositeOperation = 'source-over';
     }
     
-    // --- Local & Remote Real-time Drawing Functions ---
+    // --- Local Real-time Drawing Functions (Client Prediction) ---
 
     // Starts a local stroke (Client-Side Prediction)
-    startLocalPath(x, y, color, width) {
+    startLocalPath(x, y, color, width, tool) {
         this.isDrawing = true;
         this.ctx.beginPath();
-        this.ctx.strokeStyle = color;
+
+        // Apply tool-specific settings for local prediction
+        if (tool === 'eraser') {
+            this.ctx.strokeStyle = '#f8f8f8'; // Match background
+            this.ctx.globalCompositeOperation = 'destination-out';
+        } else {
+            this.ctx.strokeStyle = color;
+            this.ctx.globalCompositeOperation = 'source-over';
+        }
+
         this.ctx.lineWidth = width;
         this.ctx.moveTo(x, y);
     }
@@ -76,31 +103,15 @@ class CanvasManager {
         this.ctx.lineTo(x, y);
         this.ctx.stroke();
     }
-    
-    // Continues a stroke initiated by a REMOTE user (for low-latency visualization)
-    continueRemotePath(x, y, color, width) {
-        // To handle many remote strokes simultaneously, we need to save and restore context
-        this.ctx.save();
-        this.ctx.beginPath();
-        this.ctx.strokeStyle = color;
-        this.ctx.lineWidth = width;
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round';
-        
-        // NOTE: This simple version is only for incremental point updates.
-        // A robust solution would track remote strokes by ID using a temporary dictionary 
-        // to properly handle the moveTo/lineTo sequence for each remote user.
-        // For now, we rely on the server sending the full stroke on path:end.
-        
-        this.ctx.lineTo(x, y);
-        this.ctx.stroke();
-        this.ctx.closePath();
-        this.ctx.restore();
-    }
 
     // Finalizes the local stroke
     endLocalPath() {
         this.isDrawing = false;
         this.ctx.closePath();
+        // Reset composite operation after finishing the stroke
+        this.ctx.globalCompositeOperation = 'source-over'; 
     }
+    
+    // NOTE: continueRemotePath is removed to simplify state management 
+    // and enforce server authority.
 }
